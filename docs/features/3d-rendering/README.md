@@ -12,10 +12,6 @@ flag: [commands.md#baguette-render-3d](../../commands.md#baguette-render-3d).
 Based on [`benmcdowell/3dsg`](https://github.com/benmcdowell/3dsg), but
 data-driven: models are definitions you can add ([models.md](models.md)).
 
-Models bundled with Xcode are loaded from `DEVELOPER_DIR` when set, or from
-the system-selected Xcode otherwise. Use the `Contents/Developer` path when
-selecting an installation.
-
 ## Quick start
 
 Capture the current simulator frame and infer the model from its device type:
