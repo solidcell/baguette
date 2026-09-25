@@ -42,10 +42,6 @@ Apple USDZ binaries should not be committed to this repository until their
 redistribution terms have been verified. Bundled definitions may point at the
 same Apple-hosted assets used by 3dsg.
 
-Models bundled with Xcode are loaded from `DEVELOPER_DIR` when set, or from
-the system-selected Xcode otherwise. Use the `Contents/Developer` path when
-selecting an installation.
-
 ## Definition schema
 
 ```json

@@ -12,22 +12,10 @@ struct VerifiedDeviceAssets: @unchecked Sendable {
     private let fetch: Fetch
     private let developerDir: () -> String
 
-    static func selectedDeveloperDir(
-        environment: [String: String],
-        fallback: () -> String
-    ) -> String {
-        environment["DEVELOPER_DIR"] ?? fallback()
-    }
-
     init(
         cacheRoot: URL = Self.defaultCacheRoot,
         fetch: @escaping Fetch = { try Data(contentsOf: $0) },
-        developerDir: @escaping () -> String = {
-            Self.selectedDeveloperDir(
-                environment: ProcessInfo.processInfo.environment,
-                fallback: { CoreSimulators.developerDir() }
-            )
-        }
+        developerDir: @escaping () -> String = { CoreSimulators.developerDir() }
     ) {
         self.cacheRoot = cacheRoot
         self.fetch = fetch

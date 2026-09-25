@@ -11,7 +11,6 @@ For releases prior to this changelog, see the
 ## [Unreleased]
 
 ### Fixed
-- `baguette render-3d` honors `DEVELOPER_DIR` when loading models from Xcode, so an explicit toolchain selection takes precedence over the system default. [3D rendering](docs/features/3d-rendering/README.md).
 - Route foldable simulator rotation through native guest pose events, using accepted enum values and waiting for dispatch completion.
 - `baguette stream --help` no longer offers an `h264` format it rejects, and `baguette logs --help` lists the levels (`default`, `info`, `debug`) and styles (including `ndjson`) it actually accepts.
 
