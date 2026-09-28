@@ -20,7 +20,7 @@ struct GuestHingeMotorTests {
         var onExit: (@Sendable (Int32) -> Void)?
     }
 
-    private func make(tool: String? = "/tmp/builds/abc/HingeControl", spawnFails: Bool = false, exitStatus: Int32? = 0, diagnostic: String? = nil)
+    private func make(deviceSetPath: String? = nil, tool: String? = "/tmp/builds/abc/HingeControl", spawnFails: Bool = false, exitStatus: Int32? = 0, diagnostic: String? = nil)
         -> (GuestHingeMotor, Captures) {
         let sub = MockSubprocess()
         let captures = Captures()
@@ -45,7 +45,7 @@ struct GuestHingeMotorTests {
         }
         given(sub).terminate().willReturn()
         let motor = GuestHingeMotor(
-            udid: "duo", subprocess: { sub }, tool: { tool }, settle: { captures.settled.append($0) }, turnTimeout: 0.05)
+            udid: "duo", deviceSetPath: deviceSetPath, subprocess: { sub }, tool: { tool }, settle: { captures.settled.append($0) }, turnTimeout: 0.05)
         return (motor, captures)
     }
 
@@ -56,6 +56,25 @@ struct GuestHingeMotorTests {
         #expect(captures.executable?.path == "/usr/bin/xcrun")
         #expect(captures.runs == [["simctl", "spawn", "duo", "/tmp/builds/abc/HingeControl", "serve"]])
         #expect(captures.written == ["sweep 130 0 800\n", "sweep 0 180 500\n"])
+    }
+
+    @Test func `custom device sets scope both rotation and persistent helper launches`() throws {
+        let (motor, captures) = make(deviceSetPath: "/tmp/custom devices")
+        try motor.turn(to: .portrait)
+        try motor.fold(from: 0, to: 130, over: 0.5)
+        #expect(captures.runs == [
+            ["simctl", "--set", "/tmp/custom devices", "spawn", "duo", "/tmp/builds/abc/HingeControl", "orientation", "portrait"],
+            ["simctl", "--set", "/tmp/custom devices", "spawn", "duo", "/tmp/builds/abc/HingeControl", "serve"],
+        ])
+    }
+
+    @Test func `shared motors are isolated by device set and device identifier`() {
+        let udid = UUID().uuidString
+        let a = GuestHingeMotor.forDevice(udid, deviceSetPath: "/sets/a")
+        #expect(a === GuestHingeMotor.forDevice(udid, deviceSetPath: "/sets/a"))
+        #expect(a !== GuestHingeMotor.forDevice(udid, deviceSetPath: "/sets/b"))
+        #expect(a !== GuestHingeMotor.forDevice(udid))
+        #expect(a !== GuestHingeMotor.forDevice(UUID().uuidString, deviceSetPath: "/sets/a"))
     }
 
     @Test func `a hardware key is pressed as Device Hub presses it, for as long as asked`() throws {
@@ -71,8 +90,8 @@ struct GuestHingeMotorTests {
     @Test(arguments: [
         (DeviceOrientation.portrait, "portrait"),
         (.portraitUpsideDown, "pud"),
-        (.landscapeLeft, "landscape-left"),
-        (.landscapeRight, "landscape-right"),
+        (.landscapeLeft, "landscape-right"),
+        (.landscapeRight, "landscape-left"),
     ])
     func `rotation uses the native physical orientation values and completes the guest command`(
         orientation: DeviceOrientation, native: String
@@ -81,6 +100,12 @@ struct GuestHingeMotorTests {
         try motor.turn(to: orientation)
         #expect(captures.runs == [["simctl", "spawn", "duo", "/tmp/builds/abc/HingeControl", "orientation", native]])
         #expect(captures.written.isEmpty)
+        // Measured UIDevice values for the native guest commands. The phone
+        // backend sends DeviceOrientation.rawValue directly through Purple.
+        let physicalValues: [String: UInt32] = [
+            "portrait": 1, "pud": 2, "landscape-left": 3, "landscape-right": 4,
+        ]
+        #expect(physicalValues[native] == orientation.rawValue)
     }
 
     @Test func `a rejected rotation or missing helper is not success`() {
@@ -93,6 +118,11 @@ struct GuestHingeMotorTests {
     @Test func `successful rotation tolerates benign helper output`() throws {
         let (motor, _) = make(diagnostic: "runtime warning\n")
         try motor.turn(to: .landscapeLeft)
+    }
+
+    @Test func `a timeout warns that the device may already have moved`() {
+        #expect(String(describing: HingeError.toolTimedOut)
+            == "HingeControl timed out; the command may already have been dispatched and its outcome is unknown.")
     }
 
     @Test func `a rotation that never completes is bounded and its child is killed`() {

@@ -22,6 +22,7 @@ final class CoreSimulator: Simulator, @unchecked Sendable {
     let deviceTypeName: String
 
     private let host: any DeviceHost
+    private let deviceSetPath: String?
 
     init(
         udid: String,
@@ -29,7 +30,8 @@ final class CoreSimulator: Simulator, @unchecked Sendable {
         state: SimulatorState,
         runtime: String,
         deviceTypeName: String,
-        host: any DeviceHost
+        host: any DeviceHost,
+        deviceSetPath: String? = nil
     ) {
         self.udid = udid
         self.name = name
@@ -37,6 +39,7 @@ final class CoreSimulator: Simulator, @unchecked Sendable {
         self.runtime = runtime
         self.deviceTypeName = deviceTypeName
         self.host = host
+        self.deviceSetPath = deviceSetPath
     }
 
     func boot() throws {
@@ -95,33 +98,36 @@ final class CoreSimulator: Simulator, @unchecked Sendable {
     }
 
     func displays() -> any Displays {
-        SimulatorKitDisplays(udid: udid, host: host, hinge: hinge(), keys: GuestHingeMotor.forDevice(udid))
+        SimulatorKitDisplays(
+            udid: udid, host: host, hinge: hinge(), keys: GuestHingeMotor.forDevice(udid, deviceSetPath: deviceSetPath),
+            deviceSetPath: deviceSetPath)
     }
 
     /// One monitor per device: sockets share a watch and binds read the
     /// last sample while it runs. See `SharedHinge`.
     func hinge() -> any Hinge {
-        SharedHinge.forDevice(udid, make: { DevicectlHinge(udid: udid) }, motor: GuestHingeMotor.forDevice(udid))
+        SharedHinge.forDevice(udid, make: { DevicectlHinge(udid: udid) }, motor: GuestHingeMotor.forDevice(udid, deviceSetPath: deviceSetPath))
     }
 
     func externalDisplays() -> any ExternalDisplays {
-        HostExternalDisplays(udid: udid)
+        HostExternalDisplays(udid: udid, deviceSetPath: deviceSetPath)
     }
 
     func accessibility() -> any Accessibility {
         AXPTranslatorAccessibility(
             udid: udid, host: host,
-            litPanelPointSize: { [udid, host] in
+            litPanelPointSize: { [udid, host, deviceSetPath] in
                 // Only a foldable has a panel to choose; a phone keeps the
                 // device type's `mainScreenSize` and pays no round-trip.
                 guard let sized = try? SimulatorKitFramebufferPorts.sizedPorts(udid: udid, host: host),
-                      IntegratedPanels.several(in: sized),
-                      let binding = try? SimulatorKitDisplays(
-                          udid: udid, host: host,
-                          hinge: SharedHinge.forDevice(udid) { DevicectlHinge(udid: udid) }
-                      ).phone.resolve(),
-                      let scale = Self.mainScreenScale(udid: udid, host: host),
-                      let size = binding.pointSize(scale: scale)
+                    IntegratedPanels.several(in: sized),
+                    let binding = try? SimulatorKitDisplays(
+                        udid: udid, host: host,
+                        hinge: SharedHinge.forDevice(udid) { DevicectlHinge(udid: udid) },
+                        deviceSetPath: deviceSetPath
+                    ).phone.resolve(),
+                    let scale = Self.mainScreenScale(udid: udid, host: host),
+                    let size = binding.pointSize(scale: scale)
                 else { return nil }
                 return CGSize(width: size.width, height: size.height)
             }
@@ -132,9 +138,9 @@ final class CoreSimulator: Simulator, @unchecked Sendable {
     /// of a device (iPhone Duo is @3x on both).
     private static func mainScreenScale(udid: String, host: any DeviceHost) -> Double? {
         guard let device = host.resolveDevice(udid: udid),
-              let deviceType = device.value(forKey: "deviceType") as? NSObject,
-              let scale = (deviceType.value(forKey: "mainScreenScale") as? NSNumber)?.doubleValue,
-              scale > 0
+            let deviceType = device.value(forKey: "deviceType") as? NSObject,
+            let scale = (deviceType.value(forKey: "mainScreenScale") as? NSNumber)?.doubleValue,
+            scale > 0
         else { return nil }
         return scale
     }
@@ -149,7 +155,7 @@ final class CoreSimulator: Simulator, @unchecked Sendable {
                 let ports = try SimulatorKitFramebufferPorts.sizedPorts(udid: udid, host: host)
                 return IntegratedPanels.several(in: ports)
             },
-            motor: GuestHingeMotor.forDevice(udid),
+            motor: GuestHingeMotor.forDevice(udid, deviceSetPath: deviceSetPath),
             standard: PurpleEventOrientation(udid: udid, host: host)
         )
     }
