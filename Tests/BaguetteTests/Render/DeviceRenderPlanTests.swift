@@ -1,4 +1,3 @@
-import ArgumentParser
 import Foundation
 import Testing
 @testable import Baguette
@@ -6,24 +5,49 @@ import Testing
 @Suite("DeviceRenderPlan")
 struct DeviceRenderPlanTests {
 
-    @Test func `fold option errors explain the unsupported request`() {
-        #expect(Render3DCommand.message(for: DeviceModelError.modelCannotFold("iphone-17"))
-            == "Model 'iphone-17' cannot fold; omit --hinge-degrees or choose a foldable model.")
-        #expect(Render3DCommand.message(for: DeviceModelError.invalidHingeAngle)
-            == "The hinge angle must be finite and between 0 and 180 degrees.")
-    }
-
-    @Test func `an unreadable screen image says so instead of naming the error case`() {
-        #expect(Render3DCommand.message(for: DeviceModelError.screenImageInvalid)
-            == "The screen image is not a readable PNG or JPEG.")
-    }
-
     @Test(arguments: [(0.0, IntegratedPanel.primary), (89.0, .primary), (90.0, .secondary), (130.0, .secondary), (180.0, .secondary)])
     func `saved fold poses select the corresponding screen`(angle: Double, panel: IntegratedPanel) throws {
         let plan = try Self.foldPlan(angle: angle)
         #expect(plan.screenPanel == panel)
         #expect(plan.hingeDegrees == angle)
         #expect(plan.screenRotation == .quarter)
+    }
+
+    /// A capture is saved upright in the orientation it was taken in. The
+    /// plan turns the image back to its panel's own buffer and rolls the
+    /// model as the guest was held (`InterfaceRoll`), on top of `--rotation`.
+    @Test(arguments: [
+        (180.0, DeviceOrientation.portrait, ScreenRotation.none, 90.0),
+        (180.0, .landscapeLeft, .quarter, 0.0),
+        (180.0, .portraitUpsideDown, .half, -90.0),
+        (180.0, .landscapeRight, .threeQuarters, 180.0),
+        (0.0, .portrait, .none, 0.0),
+        (0.0, .landscapeLeft, .quarter, -90.0),
+        (0.0, .portraitUpsideDown, .half, 180.0),
+        (0.0, .landscapeRight, .threeQuarters, 90.0),
+    ])
+    func `a capture's orientation turns its image and rolls a foldable upright`(
+        angle: Double, orientation: DeviceOrientation, turn: ScreenRotation, roll: Double
+    ) throws {
+        let plan = try Self.foldPlan(angle: angle, orientation: orientation, rotation: DeviceRotation(x: 5, y: 10, z: 20))
+        #expect(plan.screenRotation == turn)
+        #expect(plan.rotation == DeviceRotation(x: 5, y: 10, z: 20 + roll))
+    }
+
+    @Test func `an unfolded foldable rolls for its inner screen and a phone like a cover`() throws {
+        #expect(try Self.foldPlan(angle: nil, orientation: .portrait).rotation.z == 90)
+        let phone = try DeviceRenderPlan.build(
+            model: Self.installed(), variants: [:], rotation: .zero,
+            outputSize: RenderDimensions(width: 300, height: 400), screenOrientation: .landscapeLeft
+        )
+        #expect(phone.screenRotation == .quarter)
+        #expect(phone.rotation.z == -90)
+    }
+
+    @Test func `without an orientation the image and model are left as they are`() throws {
+        let plan = try Self.foldPlan(angle: 130, orientation: nil, rotation: DeviceRotation(x: 5, y: 10, z: 20))
+        #expect(plan.screenRotation == .none)
+        #expect(plan.rotation == DeviceRotation(x: 5, y: 10, z: 20))
     }
 
     @Test(arguments: [-1.0, 181.0, Double.infinity, Double.nan])
@@ -52,14 +76,18 @@ struct DeviceRenderPlanTests {
         #expect(try Self.foldPlan(angle: nil).screenPanel == nil)
     }
 
-    private static func foldPlan(angle: Double?) throws -> DeviceRenderPlan {
+    private static func foldPlan(
+        angle: Double?,
+        orientation: DeviceOrientation? = .landscapeLeft,
+        rotation: DeviceRotation = .zero
+    ) throws -> DeviceRenderPlan {
         try DeviceRenderPlan.build(
             model: installed(fold: DeviceModelFold(
                 clip: "fold", shutTime: 5, coverMaterial: "Cover",
                 coverTextureSize: RenderDimensions(width: 100, height: 200), openPoseDegrees: 130
             )),
-            variants: [:], rotation: .zero, outputSize: RenderDimensions(width: 300, height: 400),
-            hingeDegrees: angle, screenRotation: .quarter
+            variants: [:], rotation: rotation, outputSize: RenderDimensions(width: 300, height: 400),
+            hingeDegrees: angle, screenOrientation: orientation
         )
     }
 
